@@ -2,6 +2,7 @@
 
 import asyncio
 import re
+import urllib.parse
 
 from camoufox.async_api import AsyncCamoufox
 
@@ -139,6 +140,38 @@ async def _apply_sort(page, sort_by: str) -> None:
                         pass
         except Exception:
             pass
+
+
+def _extract_place_name(url: str) -> str | None:
+    m = re.search(r"/place/([^/@?]+)[/@?]", url)
+    if m:
+        name = m.group(1)
+        if name:
+            return urllib.parse.unquote_plus(name)
+    return None
+
+
+async def _search_and_open_first_result(page, place_name: str) -> bool:
+    search_url = f"https://www.google.com/maps/search/{urllib.parse.quote(place_name)}"
+    print(f"[gmaps] place URL had no panel — searching: {place_name}", flush=True)
+    try:
+        await page.goto(search_url, wait_until="domcontentloaded", timeout=30000)
+        await asyncio.sleep(3)
+    except Exception as e:
+        print(f"[gmaps] search navigation failed: {e}", flush=True)
+        return False
+    for sel in ["a.hfpxzc", ".Nv2PK a", "[data-result-index='0'] a"]:
+        try:
+            el = page.locator(sel).first
+            if await el.is_visible(timeout=5000):
+                await el.click()
+                await asyncio.sleep(3)
+                print(f"[gmaps] clicked first search result", flush=True)
+                return True
+        except Exception:
+            pass
+    print(f"[gmaps] could not click first search result", flush=True)
+    return False
 
 
 async def _find_feed(page):
@@ -295,6 +328,16 @@ async def scrape_place(page, url: str, max_reviews: int, sort_by: str) -> list[d
     else:
         await _dismiss_consent(page)
 
+    # If URL resolved to coordinate view without a place panel (place name stripped),
+    # fall back to a search so we still get the right place panel
+    if "/place//@" in page.url:
+        place_name = _extract_place_name(url)
+        if place_name:
+            await _search_and_open_first_result(page, place_name)
+            await _dismiss_consent(page)
+
+    print(f"[gmaps] page url: {page.url[:80]}", flush=True)
+
     # Wait for place panel (h1 is the place name)
     for wait_sel in ["h1.DUwDvf", "h1", "[data-item-id]"]:
         try:
@@ -303,7 +346,6 @@ async def scrape_place(page, url: str, max_reviews: int, sort_by: str) -> list[d
             break
         except Exception:
             pass
-    print(f"[gmaps] page url after wait: {page.url[:80]}", flush=True)
 
     place_info = await _get_place_info(page)
     print(f"[gmaps] place: {place_info['place_name']!r}, rating: {place_info['place_rating']}", flush=True)
