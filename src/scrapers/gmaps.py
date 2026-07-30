@@ -33,6 +33,11 @@ async def _dismiss_consent(page) -> None:
     for sel in [
         "button[aria-label='Accept all']",
         "button[aria-label*='Accept']",
+        "button:has-text('Accept all')",
+        "button:has-text('Tout accepter')",
+        "button:has-text('Alle akzeptieren')",
+        "button:has-text('Aceptar todo')",
+        "form[action*='consent'] button[type='submit']",
         "form[action*='consent'] button",
         "[id*='consent'] button",
     ]:
@@ -40,7 +45,8 @@ async def _dismiss_consent(page) -> None:
             el = page.locator(sel).first
             if await el.is_visible(timeout=2000):
                 await el.click()
-                await asyncio.sleep(1)
+                await asyncio.sleep(2)
+                print("[gmaps] dismissed consent/cookie dialog", flush=True)
                 return
         except Exception:
             pass
@@ -83,15 +89,18 @@ async def _get_place_info(page) -> dict:
 
 async def _click_reviews_tab(page) -> bool:
     for sel in [
-        "button[aria-label*='Reviews']",
-        "[role='tab'][aria-label*='Reviews']",
+        "button[aria-label*='review']",
+        "button[aria-label*='Review']",
+        "[role='tab'][aria-label*='review']",
+        "[role='tab'][aria-label*='Review']",
         "button[jsaction*='tab'] span:has-text('Reviews')",
+        "[role='tab']:has-text('Reviews')",
     ]:
         try:
             el = page.locator(sel).first
-            if await el.is_visible(timeout=3000):
+            if await el.is_visible(timeout=4000):
                 await el.click()
-                await asyncio.sleep(2)
+                await asyncio.sleep(3)
                 print("[gmaps] clicked Reviews tab", flush=True)
                 return True
         except Exception:
@@ -265,13 +274,31 @@ async def scrape_place(page, url: str, max_reviews: int, sort_by: str) -> list[d
     except Exception as e:
         print(f"[gmaps] navigation error: {e}", flush=True)
 
-    await asyncio.sleep(3)
+    # Give the page time to settle, then dismiss any consent dialog
+    await asyncio.sleep(5)
     await _dismiss_consent(page)
+
+    # Wait for place panel (h1 is the place name)
+    for wait_sel in ["h1.DUwDvf", "h1", "[data-item-id]"]:
+        try:
+            await page.wait_for_selector(wait_sel, timeout=15000)
+            print(f"[gmaps] place panel ready ({wait_sel})", flush=True)
+            break
+        except Exception:
+            pass
 
     place_info = await _get_place_info(page)
     print(f"[gmaps] place: {place_info['place_name']!r}, rating: {place_info['place_rating']}", flush=True)
 
-    await _click_reviews_tab(page)
+    clicked = await _click_reviews_tab(page)
+    if clicked:
+        # Wait for review elements to appear in the DOM
+        try:
+            await page.wait_for_selector("[data-review-id], div.jftiEf", timeout=10000)
+            print("[gmaps] reviews visible in DOM", flush=True)
+        except Exception:
+            print("[gmaps] no review elements found after tab click", flush=True)
+
     await _apply_sort(page, sort_by)
 
     feed_el, feed_sel = await _find_feed(page)
