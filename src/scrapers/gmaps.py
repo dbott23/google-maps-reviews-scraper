@@ -232,12 +232,16 @@ def _js_extract_reviews() -> str:
                 const rcMatch = lgText.match(/(\\d+)\\s*review/i);
                 if (rcMatch) reviewer_review_count = parseInt(rcMatch[1]);
 
-                // Star rating from aria-label
+                // Star rating — use stable Google class (language-agnostic)
+                // span[aria-label*="star"] fails when proxy returns non-English UI
                 let rating = null;
-                const starEl = el.querySelector('span[aria-label*="star"]');
+                const starEl = el.querySelector('span.kvMYJc, span[role="img"][aria-label]');
                 if (starEl) {
                     const m = starEl.getAttribute('aria-label').match(/[\\d.]+/);
-                    if (m) rating = parseFloat(m[0]);
+                    if (m) {
+                        const v = parseFloat(m[0]);
+                        if (v >= 1 && v <= 5) rating = v;
+                    }
                 }
 
                 // Date (relative: "2 months ago")
