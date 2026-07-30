@@ -187,14 +187,14 @@ def _js_extract_reviews() -> str:
                 // Reviewer review count (shown as "· X reviews")
                 let reviewer_review_count = null;
                 const lgText = lgEl ? lgEl.innerText : '';
-                const rcMatch = lgText.match(/(\d+)\s*review/i);
+                const rcMatch = lgText.match(/(\\d+)\\s*review/i);
                 if (rcMatch) reviewer_review_count = parseInt(rcMatch[1]);
 
                 // Star rating from aria-label
                 let rating = null;
                 const starEl = el.querySelector('span[aria-label*="star"]');
                 if (starEl) {
-                    const m = starEl.getAttribute('aria-label').match(/[\d.]+/);
+                    const m = starEl.getAttribute('aria-label').match(/[\\d.]+/);
                     if (m) rating = parseFloat(m[0]);
                 }
 
@@ -212,7 +212,7 @@ def _js_extract_reviews() -> str:
                 let helpful_count = null;
                 const likeBtn = el.querySelector('button[aria-label*="helpful"], button[jsaction*="voteHelpful"]');
                 if (likeBtn) {
-                    const m2 = likeBtn.innerText.trim().match(/\d+/);
+                    const m2 = likeBtn.innerText.trim().match(/\\d+/);
                     if (m2) helpful_count = parseInt(m2[0]);
                 }
 
