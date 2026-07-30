@@ -87,7 +87,7 @@ The actor uses residential proxy rotation to mimic real browser traffic. Block r
 
 ## Pricing
 
-- **$1.00 per 1,000 reviews** scraped
+- **$30.00 per 1,000 reviews** scraped
 - Actor start: $0.00005 per run
 
-Example: 500 reviews from each of 3 locations = 1,500 reviews = **$1.50** total.
+Example: 500 reviews from each of 3 locations = 1,500 reviews = **$45.00** total.
