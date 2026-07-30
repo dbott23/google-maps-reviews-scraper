@@ -1,0 +1,17 @@
+{
+    "actorSpecification": 1,
+    "fields": [
+        {"name": "place_name", "type": "string", "description": "Name of the business"},
+        {"name": "place_url", "type": "string", "description": "Google Maps URL of the place"},
+        {"name": "place_rating", "type": "number", "description": "Overall star rating of the business (e.g. 4.5)"},
+        {"name": "place_total_reviews", "type": "integer", "description": "Total number of reviews on Google Maps"},
+        {"name": "reviewer_name", "type": "string", "description": "Display name of the reviewer"},
+        {"name": "is_local_guide", "type": "boolean", "description": "True if the reviewer is a Google Local Guide"},
+        {"name": "reviewer_review_count", "type": "integer", "description": "Number of reviews the reviewer has written"},
+        {"name": "rating", "type": "number", "description": "Star rating given by the reviewer (1–5)"},
+        {"name": "date", "type": "string", "description": "Relative date of the review (e.g. '2 months ago')"},
+        {"name": "text", "type": "string", "description": "Review text"},
+        {"name": "helpful_count", "type": "integer", "description": "Number of people who found the review helpful"},
+        {"name": "owner_response", "type": "string", "description": "Owner's response to the review (if any)"}
+    ]
+}

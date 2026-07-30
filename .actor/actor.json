@@ -1,0 +1,39 @@
+{
+    "actorSpecification": 1,
+    "name": "google-maps-reviews-scraper",
+    "title": "Google Maps Reviews Scraper",
+    "description": "Scrape reviews from any Google Maps business listing. Enter one or more place URLs and get reviewer name, star rating, review text, date, local guide status, and owner responses.",
+    "version": "0.1",
+    "buildTag": "latest",
+    "input": "./input_schema.json",
+    "dockerfile": "./Dockerfile",
+    "defaultRunOptions": {
+        "timeoutSecs": 600,
+        "memoryMbytes": 2048
+    },
+    "storages": {
+        "dataset": {
+            "actorSpecification": 1,
+            "views": {
+                "overview": {
+                    "title": "Reviews",
+                    "transformation": {
+                        "fields": [
+                            "place_name",
+                            "reviewer_name",
+                            "rating",
+                            "date",
+                            "text",
+                            "helpful_count",
+                            "is_local_guide",
+                            "owner_response"
+                        ]
+                    },
+                    "display": {
+                        "component": "table"
+                    }
+                }
+            }
+        }
+    }
+}

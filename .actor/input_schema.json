@@ -1,0 +1,33 @@
+{
+    "title": "Google Maps Reviews Scraper",
+    "type": "object",
+    "schemaVersion": 1,
+    "properties": {
+        "placeUrls": {
+            "title": "Google Maps Place URLs",
+            "type": "array",
+            "description": "List of Google Maps place URLs to scrape reviews from. Open any business on Google Maps and copy the URL from your browser address bar.",
+            "editor": "stringList",
+            "prefill": ["https://www.google.com/maps/place/Eiffel+Tower/@48.8583701,2.2922926,17z"]
+        },
+        "maxReviewsPerPlace": {
+            "title": "Max reviews per place",
+            "type": "integer",
+            "description": "Maximum number of reviews to scrape per place (default: 50, max: 500).",
+            "editor": "number",
+            "default": 50,
+            "minimum": 1,
+            "maximum": 500
+        },
+        "sortBy": {
+            "title": "Sort reviews by",
+            "type": "string",
+            "description": "Order in which reviews are returned.",
+            "editor": "select",
+            "enum": ["newest", "relevant", "highest", "lowest"],
+            "enumTitles": ["Newest first", "Most relevant", "Highest rating first", "Lowest rating first"],
+            "default": "newest"
+        }
+    },
+    "required": ["placeUrls"]
+}
