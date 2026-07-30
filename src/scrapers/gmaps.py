@@ -268,24 +268,42 @@ async def _expand_reviews(page) -> None:
 
 
 async def scrape_place(page, url: str, max_reviews: int, sort_by: str) -> list[dict]:
+    # Pre-accept Google consent by visiting google.com first
+    try:
+        await page.goto("https://www.google.com", wait_until="domcontentloaded", timeout=30000)
+        await asyncio.sleep(3)
+        await _dismiss_consent(page)
+        await asyncio.sleep(2)
+        print(f"[gmaps] pre-consent step done, current url: {page.url[:60]}", flush=True)
+    except Exception as e:
+        print(f"[gmaps] pre-consent step failed: {e}", flush=True)
+
     print(f"[gmaps] loading {url}", flush=True)
     try:
         await page.goto(url, wait_until="domcontentloaded", timeout=60000)
     except Exception as e:
         print(f"[gmaps] navigation error: {e}", flush=True)
 
-    # Give the page time to settle, then dismiss any consent dialog
-    await asyncio.sleep(5)
-    await _dismiss_consent(page)
+    await asyncio.sleep(3)
+
+    # If redirected to consent page, handle it
+    current_url = page.url
+    if "consent.google" in current_url:
+        print(f"[gmaps] consent redirect detected: {current_url[:80]}", flush=True)
+        await _dismiss_consent(page)
+        await asyncio.sleep(3)
+    else:
+        await _dismiss_consent(page)
 
     # Wait for place panel (h1 is the place name)
     for wait_sel in ["h1.DUwDvf", "h1", "[data-item-id]"]:
         try:
-            await page.wait_for_selector(wait_sel, timeout=15000)
+            await page.wait_for_selector(wait_sel, timeout=10000)
             print(f"[gmaps] place panel ready ({wait_sel})", flush=True)
             break
         except Exception:
             pass
+    print(f"[gmaps] page url after wait: {page.url[:80]}", flush=True)
 
     place_info = await _get_place_info(page)
     print(f"[gmaps] place: {place_info['place_name']!r}, rating: {place_info['place_rating']}", flush=True)
