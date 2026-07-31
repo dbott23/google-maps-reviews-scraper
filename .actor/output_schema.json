@@ -1,0 +1,13 @@
+{
+    "actorOutputSchemaVersion": 1,
+    "title": "Google Maps reviews",
+    "description": "Scraped Google Maps reviews, stored in the default dataset.",
+    "properties": {
+        "reviews": {
+            "type": "string",
+            "title": "Reviews",
+            "description": "All scraped reviews with place, reviewer, rating, date, text, local guide status and owner response.",
+            "template": "{{links.apiDefaultDatasetUrl}}/items"
+        }
+    }
+}
