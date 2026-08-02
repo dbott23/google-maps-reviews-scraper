@@ -186,21 +186,20 @@ async def _search_and_open_first_result(page, place_name: str) -> bool:
     return False
 
 
-async def _find_feed(page):
-    """Return the locator for the scrollable reviews container."""
-    for sel in [
-        "div[role='feed']",
-        "div.m6QErb[aria-label]",
-        "div.m6QErb",
-    ]:
-        try:
-            el = page.locator(sel).first
-            if await el.is_visible(timeout=3000):
-                print(f"[gmaps] feed found with: {sel}", flush=True)
-                return el, sel
-        except Exception:
-            pass
-    return None, None
+# Dynamically scroll the reviews list. Google dropped div[role='feed'] and keeps
+# reshuffling its obfuscated class names, so instead of hardcoding a selector we
+# walk up from a review element to its actual scrollable ancestor and scroll that.
+_SCROLL_REVIEWS_JS = """
+() => {
+    const rev = document.querySelector('[data-review-id], div.jftiEf');
+    if (!rev) return false;
+    let el = rev.parentElement;
+    while (el && el.scrollHeight <= el.clientHeight + 4) el = el.parentElement;
+    if (!el) return false;
+    el.scrollBy(0, Math.max(el.clientHeight * 0.9, 800));
+    return true;
+}
+"""
 
 
 def _js_extract_reviews() -> str:
@@ -378,8 +377,6 @@ async def scrape_place(page, url: str, max_reviews: int, sort_by: str) -> list[d
 
     await _apply_sort(page, sort_by)
 
-    feed_el, feed_sel = await _find_feed(page)
-
     seen_keys: set[str] = set()
     reviews: list[dict] = []
     stall = 0
@@ -409,13 +406,12 @@ async def scrape_place(page, url: str, max_reviews: int, sort_by: str) -> list[d
         else:
             stall = 0
 
-        # Scroll the feed
-        if feed_el:
-            try:
-                await feed_el.evaluate("el => el.scrollBy(0, 800)")
-            except Exception:
-                await page.keyboard.press("End")
-        else:
+        # Scroll the reviews list (dynamically finds the scrollable container)
+        try:
+            scrolled = await page.evaluate(_SCROLL_REVIEWS_JS)
+        except Exception:
+            scrolled = False
+        if not scrolled:
             await page.keyboard.press("End")
 
         await asyncio.sleep(1.5)
