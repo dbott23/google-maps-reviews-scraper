@@ -24,8 +24,8 @@ async def main() -> None:
 
         proxy_config = None
         try:
-            proxy_config = await Actor.create_proxy_configuration(groups=["RESIDENTIAL"])
-            Actor.log.info("Residential proxy configured")
+            proxy_config = await Actor.create_proxy_configuration(groups=["RESIDENTIAL"], country_code="US")
+            Actor.log.info("Residential proxy configured (US exit for English UI)")
         except Exception as exc:
             Actor.log.warning(f"Proxy setup failed ({exc}) — running without proxy (may be blocked by Google)")
 

@@ -142,6 +142,18 @@ async def _apply_sort(page, sort_by: str) -> None:
             pass
 
 
+def _force_english(url: str) -> str:
+    """Append hl=en&gl=us so Google Maps renders in English regardless of proxy geo.
+
+    The English UI is required because the Reviews tab / Sort controls are matched
+    by their English label text; a localized UI (e.g. 'Recensioni') breaks them.
+    """
+    if "hl=" in url:
+        return url
+    sep = "&" if "?" in url else "?"
+    return f"{url}{sep}hl=en&gl=us"
+
+
 def _extract_place_name(url: str) -> str | None:
     m = re.search(r"/place/([^/@?]+)[/@?]", url)
     if m:
@@ -152,7 +164,7 @@ def _extract_place_name(url: str) -> str | None:
 
 
 async def _search_and_open_first_result(page, place_name: str) -> bool:
-    search_url = f"https://www.google.com/maps/search/{urllib.parse.quote(place_name)}"
+    search_url = _force_english(f"https://www.google.com/maps/search/{urllib.parse.quote(place_name)}")
     print(f"[gmaps] place URL had no panel — searching: {place_name}", flush=True)
     try:
         await page.goto(search_url, wait_until="domcontentloaded", timeout=30000)
@@ -307,7 +319,7 @@ async def _expand_reviews(page) -> None:
 async def scrape_place(page, url: str, max_reviews: int, sort_by: str) -> list[dict]:
     # Pre-accept Google consent by visiting google.com first
     try:
-        await page.goto("https://www.google.com", wait_until="domcontentloaded", timeout=30000)
+        await page.goto("https://www.google.com/?hl=en&gl=us", wait_until="domcontentloaded", timeout=30000)
         await asyncio.sleep(3)
         await _dismiss_consent(page)
         await asyncio.sleep(2)
@@ -315,6 +327,7 @@ async def scrape_place(page, url: str, max_reviews: int, sort_by: str) -> list[d
     except Exception as e:
         print(f"[gmaps] pre-consent step failed: {e}", flush=True)
 
+    url = _force_english(url)
     print(f"[gmaps] loading {url}", flush=True)
     try:
         await page.goto(url, wait_until="domcontentloaded", timeout=60000)
@@ -436,6 +449,7 @@ async def scrape(
         headless=True,
         proxy=proxy_opts,
         geoip=True,
+        locale="en-US",
         firefox_user_prefs={"security.sandbox.content.level": 0},
     ) as browser:
         page = await browser.new_page()
