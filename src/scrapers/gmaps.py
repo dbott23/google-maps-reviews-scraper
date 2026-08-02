@@ -366,6 +366,21 @@ async def scrape_place(page, url: str, max_reviews: int, sort_by: str) -> list[d
     place_info = await _get_place_info(page)
     print(f"[gmaps] place: {place_info['place_name']!r}, rating: {place_info['place_rating']}", flush=True)
 
+    # Panel didn't load (e.g. a URL pasted without the place-id `data=` hash) —
+    # recover by searching for the place name and opening the first result.
+    if not place_info.get("place_name"):
+        pname = _extract_place_name(url)
+        if pname and await _search_and_open_first_result(page, pname):
+            await _dismiss_consent(page)
+            for wait_sel in ["h1.DUwDvf", "h1"]:
+                try:
+                    await page.wait_for_selector(wait_sel, timeout=10000)
+                    break
+                except Exception:
+                    pass
+            place_info = await _get_place_info(page)
+            print(f"[gmaps] place (after search): {place_info['place_name']!r}", flush=True)
+
     clicked = await _click_reviews_tab(page)
     if clicked:
         # Wait for review elements to appear in the DOM
