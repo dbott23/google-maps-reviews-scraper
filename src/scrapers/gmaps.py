@@ -400,8 +400,12 @@ async def scrape_place(page, url: str, max_reviews: int, sort_by: str) -> list[d
 
         if new_found == 0:
             stall += 1
-            if stall >= 6:
-                print("[gmaps] no new reviews after 6 scrolls, stopping", flush=True)
+            # Be patient while the FIRST batch is still loading (slow residential
+            # proxies can take 15-30s after the sort reload); once reviews are
+            # flowing, stop promptly after 6 empty scrolls.
+            limit = 15 if not reviews else 6
+            if stall >= limit:
+                print(f"[gmaps] no new reviews after {stall} scrolls, stopping", flush=True)
                 break
         else:
             stall = 0
