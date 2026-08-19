@@ -12,6 +12,18 @@ from src.scrapers._proxy import parse_proxy
 # Reviews shown on the place overview panel before the Reviews pane is opened.
 _OVERVIEW_PREVIEW_MAX = 3
 
+_BROWSER_GONE_MARKERS = (
+    "has been closed",
+    "target closed",
+    "browser closed",
+    "connection closed",
+)
+
+
+def _browser_is_gone(exc: Exception) -> bool:
+    msg = str(exc).lower()
+    return any(m in msg for m in _BROWSER_GONE_MARKERS)
+
 _SORT_LABELS = {
     "relevant": "Most relevant",
     "newest": "Newest",
@@ -474,7 +486,17 @@ async def scrape_place(page, url: str, max_reviews: int, sort_by: str) -> list[d
 
         await _expand_reviews(page)
 
-        raw = await page.evaluate(_js_extract_reviews())
+        try:
+            raw = await page.evaluate(_js_extract_reviews())
+        except Exception as exc:
+            if _browser_is_gone(exc):
+                print(
+                    f"[gmaps] browser closed after {len(reviews)} review(s) — "
+                    f"keeping the partial result ({exc})",
+                    flush=True,
+                )
+                break
+            raise
         new_found = 0
         for r in raw:
             key = r.pop("_key", None) or f"{r.get('reviewer_name')}|{str(r.get('text', ''))[:40]}"
@@ -497,13 +519,22 @@ async def scrape_place(page, url: str, max_reviews: int, sort_by: str) -> list[d
         else:
             stall = 0
 
-        # Scroll the reviews list (dynamically finds the scrollable container)
+        # Scroll the reviews list (dynamically finds the scrollable container).
+        # camoufox occasionally dies mid-scrape ("Target page, context or browser has
+        # been closed"); keep the reviews collected so far instead of losing the lot.
         try:
             scrolled = await page.evaluate(_SCROLL_REVIEWS_JS)
-        except Exception:
-            scrolled = False
-        if not scrolled:
-            await page.keyboard.press("End")
+            if not scrolled:
+                await page.keyboard.press("End")
+        except Exception as exc:
+            if _browser_is_gone(exc):
+                print(
+                    f"[gmaps] browser closed after {len(reviews)} review(s) — "
+                    f"keeping the partial result ({exc})",
+                    flush=True,
+                )
+                break
+            print(f"[gmaps] scroll failed ({exc}), retrying", flush=True)
 
         await asyncio.sleep(1.5)
 
@@ -525,6 +556,7 @@ async def scrape(
     max_reviews_per_place: int = 50,
     sort_by: str = "newest",
     get_proxy_url=None,
+    errors: list[str] | None = None,
 ) -> list[dict]:
     proxy = None
     if get_proxy_url:
@@ -558,6 +590,16 @@ async def scrape(
                 print(f"[gmaps] {len(reviews)} reviews from {url}", flush=True)
             except Exception as e:
                 print(f"[gmaps] error on {url}: {e}", flush=True)
+                if errors is not None:
+                    errors.append(f"{url}: {e}")
+                # A dead browser fails every remaining URL instantly — try a fresh page.
+                if _browser_is_gone(e):
+                    try:
+                        page = await browser.new_page()
+                        print("[gmaps] recovered with a fresh page", flush=True)
+                    except Exception as exc2:
+                        print(f"[gmaps] browser unrecoverable: {exc2}", flush=True)
+                        break
 
             await asyncio.sleep(3)
 

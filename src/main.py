@@ -39,13 +39,16 @@ async def main() -> None:
 
         for url in remaining:
             Actor.log.info(f"Scraping: {url}")
+            place_errors: list[str] = []
             try:
                 reviews = await gmaps.scrape(
                     place_urls=[url],
                     max_reviews_per_place=max_reviews,
                     sort_by=sort_by,
                     get_proxy_url=proxy_config.new_url if proxy_config else None,
+                    errors=place_errors,
                 )
+                failures.extend(place_errors)
             except Exception as exc:
                 Actor.log.error(f"Error scraping {url}: {exc}")
                 failures.append(f"{url}: {exc}")
