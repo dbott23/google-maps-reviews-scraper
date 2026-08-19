@@ -40,27 +40,34 @@ async def main() -> None:
         for url in remaining:
             Actor.log.info(f"Scraping: {url}")
             place_errors: list[str] = []
+            pushed_here = 0
+
+            # Push as reviews arrive so a timeout or a lost browser cannot discard the
+            # work already done. push_data fires the billing event exactly once per
+            # item, so the results must NOT be pushed again after scrape() returns.
+            async def push_batch(batch: list[dict]) -> None:
+                nonlocal total_pushed, pushed_here
+                await Actor.push_data(batch)
+                total_pushed += len(batch)
+                pushed_here += len(batch)
+
             try:
-                reviews = await gmaps.scrape(
+                await gmaps.scrape(
                     place_urls=[url],
                     max_reviews_per_place=max_reviews,
                     sort_by=sort_by,
                     get_proxy_url=proxy_config.new_url if proxy_config else None,
                     errors=place_errors,
+                    on_batch=push_batch,
                 )
                 failures.extend(place_errors)
             except Exception as exc:
                 Actor.log.error(f"Error scraping {url}: {exc}")
                 failures.append(f"{url}: {exc}")
-                reviews = []
-
-            if reviews:
-                await Actor.push_data(reviews)
-                total_pushed += len(reviews)
 
             done.add(url)
             await Actor.set_value(CHECKPOINT_KEY, {"done": list(done), "total_pushed": total_pushed})
-            Actor.log.info(f"  → {len(reviews)} reviews (total: {total_pushed})")
+            Actor.log.info(f"  → {pushed_here} reviews (total: {total_pushed})")
 
         Actor.log.info(f"Done. Total reviews pushed: {total_pushed}")
 

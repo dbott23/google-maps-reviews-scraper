@@ -385,21 +385,43 @@ def _js_extract_reviews() -> str:
     """
 
 
+# Playwright's default click timeout is 30s. A "See more" button that is covered or
+# detached therefore blocks for 30s, and 30 of them stall the scroll loop for 15
+# minutes — long enough to burn the whole run timeout without scraping anything.
+_EXPAND_CLICK_TIMEOUT_MS = 1500
+_EXPAND_BUDGET_S = 10.0
+
+
 async def _expand_reviews(page) -> None:
-    """Click all 'More' buttons to expand truncated reviews."""
+    """Click 'More' buttons to expand truncated reviews, within a fixed time budget."""
+    deadline = asyncio.get_event_loop().time() + _EXPAND_BUDGET_S
     try:
-        buttons = await page.query_selector_all("button[aria-label*='See more'], button[jsaction*='pane.review.expandReview']")
+        buttons = await page.query_selector_all(
+            "button[aria-label*='See more'], button[jsaction*='pane.review.expandReview']"
+        )
         for btn in buttons[:30]:  # cap at 30 to avoid infinite loops
+            if asyncio.get_event_loop().time() > deadline:
+                print("[gmaps] expand budget spent, moving on", flush=True)
+                break
             try:
-                await btn.click()
+                await btn.click(timeout=_EXPAND_CLICK_TIMEOUT_MS)
                 await asyncio.sleep(0.1)
-            except Exception:
-                pass
-    except Exception:
-        pass
+            except Exception as exc:
+                if _browser_is_gone(exc):
+                    raise
+    except Exception as exc:
+        if _browser_is_gone(exc):
+            raise
+        print(f"[gmaps] expand skipped: {exc}", flush=True)
 
 
-async def scrape_place(page, url: str, max_reviews: int, sort_by: str) -> list[dict]:
+async def scrape_place(
+    page,
+    url: str,
+    max_reviews: int,
+    sort_by: str,
+    on_batch=None,
+) -> list[dict]:
     # Pre-accept Google consent by visiting google.com first
     try:
         await page.goto("https://www.google.com/?hl=en&gl=us", wait_until="domcontentloaded", timeout=30000)
@@ -484,9 +506,8 @@ async def scrape_place(page, url: str, max_reviews: int, sort_by: str) -> list[d
         if len(reviews) >= max_reviews:
             break
 
-        await _expand_reviews(page)
-
         try:
+            await _expand_reviews(page)
             raw = await page.evaluate(_js_extract_reviews())
         except Exception as exc:
             if _browser_is_gone(exc):
@@ -506,6 +527,11 @@ async def scrape_place(page, url: str, max_reviews: int, sort_by: str) -> list[d
                 new_found += 1
 
         print(f"[gmaps] scroll {i}: total={len(reviews)} (+{new_found})", flush=True)
+
+        # Hand new reviews to the caller as they arrive. A run that later times out or
+        # loses the browser then keeps everything scraped up to that point.
+        if new_found and on_batch is not None:
+            await on_batch(reviews[-new_found:])
 
         if new_found == 0:
             stall += 1
@@ -557,6 +583,7 @@ async def scrape(
     sort_by: str = "newest",
     get_proxy_url=None,
     errors: list[str] | None = None,
+    on_batch=None,
 ) -> list[dict]:
     proxy = None
     if get_proxy_url:
@@ -585,7 +612,9 @@ async def scrape(
 
         for url in place_urls:
             try:
-                reviews = await scrape_place(page, url, max_reviews_per_place, sort_by)
+                reviews = await scrape_place(
+                    page, url, max_reviews_per_place, sort_by, on_batch=on_batch
+                )
                 all_reviews.extend(reviews)
                 print(f"[gmaps] {len(reviews)} reviews from {url}", flush=True)
             except Exception as e:
