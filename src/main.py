@@ -80,6 +80,11 @@ async def main() -> None:
                 )
             )
             return
+        if total_pushed == 0:
+            await Actor.set_status_message(
+                f"No reviews found. The places may genuinely have none, or the input may not "
+                f"match anything — check the run log for the requests that were made."
+            )
         if failures:
             Actor.log.warning(
                 f"{len(failures)} place(s) failed but {total_pushed} review(s) were "
