@@ -1,12 +1,16 @@
 """Google Maps Reviews Scraper using camoufox + residential proxies."""
 
 import asyncio
+import json
 import re
 import urllib.parse
 
 from camoufox.async_api import AsyncCamoufox
 
 from src.scrapers._proxy import parse_proxy
+
+# Reviews shown on the place overview panel before the Reviews pane is opened.
+_OVERVIEW_PREVIEW_MAX = 3
 
 _SORT_LABELS = {
     "relevant": "Most relevant",
@@ -88,25 +92,93 @@ async def _get_place_info(page) -> dict:
     return info
 
 
-async def _click_reviews_tab(page) -> bool:
-    for sel in [
-        "button[aria-label*='review']",
-        "button[aria-label*='Review']",
-        "[role='tab'][aria-label*='review']",
-        "[role='tab'][aria-label*='Review']",
-        "button[jsaction*='tab'] span:has-text('Reviews')",
-        "[role='tab']:has-text('Reviews')",
-    ]:
+# The overview panel shows 3 preview reviews; the real list only appears after the
+# Reviews tab is opened. "Write a review" also matches aria-label*='review', and
+# clicking it opens a sign-in dialog while leaving the overview panel underneath —
+# which is exactly how this actor silently degraded to 3 reviews per place. So the
+# tab candidates are ordered most-specific-first, "Write/Add a review" is excluded,
+# and every click is verified against a control that only exists on the reviews pane.
+_REVIEW_TAB_SELECTORS = [
+    "[role='tab'][aria-label^='Reviews']",
+    "button[aria-label^='Reviews']",
+    "[role='tab']:has-text('Reviews')",
+    "button[jsaction*='tab'] span:has-text('Reviews')",
+    (
+        "button[aria-label*='review' i]"
+        ":not([aria-label*='Write' i]):not([aria-label*='Add' i])"
+    ),
+]
+
+_REVIEWS_PANE_MARKERS = [
+    "button[aria-label*='Sort' i]",
+    "button[jsaction*='pane.sort']",
+    "button[data-value='Sort']",
+    "[aria-label='Refine reviews']",
+]
+
+
+async def _on_reviews_pane(page) -> bool:
+    """True when a control that only exists on the reviews pane is visible."""
+    for sel in _REVIEWS_PANE_MARKERS:
         try:
-            el = page.locator(sel).first
-            if await el.is_visible(timeout=4000):
-                await el.click()
-                await asyncio.sleep(3)
-                print("[gmaps] clicked Reviews tab", flush=True)
+            if await page.locator(sel).first.is_visible(timeout=1500):
                 return True
         except Exception:
             pass
-    print("[gmaps] Reviews tab not found, may already be on reviews", flush=True)
+    return False
+
+
+async def _log_tab_candidates(page) -> None:
+    """Dump the tab/button DOM so a future break can be diagnosed from the log alone."""
+    try:
+        found = await page.evaluate(
+            """() => Array.from(document.querySelectorAll("[role='tab'], button[aria-label]"))
+                .map(e => ({
+                    role: e.getAttribute('role'),
+                    aria: e.getAttribute('aria-label'),
+                    text: (e.innerText || '').trim().slice(0, 24),
+                }))
+                .filter(e => (e.aria || e.text))
+                .slice(0, 25)"""
+        )
+        print(f"[gmaps] tab candidates: {json.dumps(found)[:1200]}", flush=True)
+    except Exception as exc:
+        print(f"[gmaps] could not dump tab candidates: {exc}", flush=True)
+
+
+async def _click_reviews_tab(page) -> bool:
+    for sel in _REVIEW_TAB_SELECTORS:
+        try:
+            el = page.locator(sel).first
+            if not await el.is_visible(timeout=4000):
+                continue
+            aria = await el.get_attribute("aria-label")
+            await el.click()
+            await asyncio.sleep(3)
+        except Exception:
+            continue
+
+        if await _on_reviews_pane(page):
+            print(f"[gmaps] opened Reviews pane via {sel} (aria={aria!r})", flush=True)
+            return True
+
+        # Wrong target (often a dialog over the overview panel) — close and try the next.
+        print(
+            f"[gmaps] {sel} (aria={aria!r}) did not open the reviews pane, trying next",
+            flush=True,
+        )
+        try:
+            await page.keyboard.press("Escape")
+            await asyncio.sleep(1)
+        except Exception:
+            pass
+
+    if await _on_reviews_pane(page):
+        print("[gmaps] already on the reviews pane", flush=True)
+        return True
+
+    print("[gmaps] could not open the Reviews pane", flush=True)
+    await _log_tab_candidates(page)
     return False
 
 
@@ -381,8 +453,8 @@ async def scrape_place(page, url: str, max_reviews: int, sort_by: str) -> list[d
             place_info = await _get_place_info(page)
             print(f"[gmaps] place (after search): {place_info['place_name']!r}", flush=True)
 
-    clicked = await _click_reviews_tab(page)
-    if clicked:
+    pane_opened = await _click_reviews_tab(page)
+    if pane_opened:
         # Wait for review elements to appear in the DOM
         try:
             await page.wait_for_selector("[data-review-id], div.jftiEf", timeout=10000)
@@ -434,6 +506,16 @@ async def scrape_place(page, url: str, max_reviews: int, sort_by: str) -> list[d
             await page.keyboard.press("End")
 
         await asyncio.sleep(1.5)
+
+    # Google's overview panel carries a handful of preview reviews. Returning those as
+    # if they were a real scrape is how this actor silently shipped 3 reviews for a
+    # place with 492k of them — bill the user for junk and look successful doing it.
+    if not pane_opened and len(reviews) <= _OVERVIEW_PREVIEW_MAX:
+        raise RuntimeError(
+            f"Only {len(reviews)} preview review(s) were reachable and the Reviews pane "
+            "never opened — Google has likely changed the place-panel layout. Refusing "
+            "to return a partial result."
+        )
 
     return reviews[:max_reviews]
 
